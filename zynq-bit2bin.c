@@ -132,28 +132,6 @@ static int read_magic_header(FILE *input, const uint8_t *expected, size_t bytes)
 #define READ_MAGIC_HEADER(input, expected)\
         read_magic_header(input, expected, sizeof(expected))
 
-/**
- * @brief      Invert the endianness of 32bits unsigned integers in a buffer
- * @param[in+out] buf   The buffer to process
- * @param[in]     n     The size of the buffer to process, in Bytes
- *                      (must be a multiple of 4)
- * @return     non-zero on error
- */
-static int invert_u32_endianness(uint8_t *buf, size_t n)
-{
-    if (n % 4){
-        fprintf(stderr,
-                "Invalid buffer size %d when attempting to invert u32 endianness\n",
-                (int) n);
-        return -1;
-    }
-
-    uint32_t *buf32 = (uint32_t *) buf;
-    for (size_t i=0; i<n/4; i++){
-        buf32[i] = htobe32(le32toh(buf32[i]));
-    }
-    return 0;
-}
 
 /**
  * @brief      Extract the binary firmware part from a .bit file into the
@@ -191,7 +169,6 @@ static int process_firmware(FILE *input, FILE *output)
     // 5. Copy chunk by chunk
     uint8_t chunk[4096];
     int chunks_done = 0;
-    bool invert_endian = false;
     while (fw_length > 0){
         int chunk_len = MIN(sizeof(chunk), fw_length);
         int r = fread(chunk, 1, chunk_len, input);
@@ -202,9 +179,7 @@ static int process_firmware(FILE *input, FILE *output)
         
         // On the first chunk, detect the SYNC word endianness
         if (chunks_done == 0){
-            if (memcmp(chunk, "\xaa\x99\x55\x66", 4) == 0){
-                invert_endian = true;
-            } else if (memcmp(chunk, "\x66\x55\x99\xaa", 4) != 0){
+           if (memcmp(chunk, "\x66\x55\x99\xaa", 4) != 0){
                 fprintf(stderr,
                         "Invalid SYNC word (%02hhX%02hhX%02hhX%02hhX)\n",
                         chunk[0], chunk[1], chunk[2], chunk[3]);
@@ -212,9 +187,6 @@ static int process_firmware(FILE *input, FILE *output)
             }
         }
 
-        if (invert_endian){
-            invert_u32_endianness(chunk, chunk_len);
-        }
 
         r = fwrite(chunk, 1, chunk_len, output);
         if (r != chunk_len){
